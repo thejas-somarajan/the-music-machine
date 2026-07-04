@@ -262,7 +262,7 @@ class _TunerScreenState extends State<TunerScreen>
       children: [
         const SizedBox(height: 24),
         GlitchText(
-          text: 'THE MUSIC MACHINE',
+          text: 'UKULELE TUNER',
           style: Theme.of(context).textTheme.titleLarge!.copyWith(
                 letterSpacing: 8,
                 color: NeonColors.neonCyan,

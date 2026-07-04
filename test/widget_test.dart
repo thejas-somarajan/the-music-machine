@@ -12,7 +12,7 @@ void main() {
     expect(find.text('Songs'), findsOneWidget);
     expect(find.text('Practice'), findsOneWidget);
 
-    final hasTunerTitle = find.text('THE MUSIC MACHINE').evaluate().isNotEmpty;
+    final hasTunerTitle = find.text('UKULELE TUNER').evaluate().isNotEmpty;
     final hasPermissionGate = find.text('Microphone Access').evaluate().isNotEmpty;
     expect(hasTunerTitle || hasPermissionGate, isTrue);
   });
