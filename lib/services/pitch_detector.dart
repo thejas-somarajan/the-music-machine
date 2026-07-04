@@ -6,7 +6,7 @@ class PitchDetector {
   PitchDetector({
     required this.sampleRate,
     this.threshold = 0.15,
-    this.minRms = 0.01,
+    this.minRms = 0.003,
   });
 
   final int sampleRate;

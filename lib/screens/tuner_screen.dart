@@ -3,8 +3,8 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_audio_capture/flutter_audio_capture.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:ukelele_tuner/core/pitch_detector.dart';
-import 'package:ukelele_tuner/core/tuner_notes.dart';
+import 'package:ukelele_tuner/models/tuning_note.dart';
+import 'package:ukelele_tuner/services/pitch_detector.dart';
 import 'package:ukelele_tuner/theme/neon_theme.dart';
 import 'package:ukelele_tuner/widgets/animated_background.dart';
 import 'package:ukelele_tuner/widgets/frequency_display.dart';
@@ -28,10 +28,12 @@ class _TunerScreenState extends State<TunerScreen>
   static const _smoothingFactor = 0.3;
 
   final _audioCapture = FlutterAudioCapture();
-  final _pitchDetector = PitchDetector(sampleRate: _sampleRate);
+  PitchDetector _pitchDetector = PitchDetector(sampleRate: _sampleRate);
 
   TunerState _state = TunerState.idle;
   bool _hasPermission = false;
+  bool _captureActive = false;
+  String? _errorMessage;
   double? _frequency;
   double _smoothedCents = 0;
   int? _activeStringIndex;
@@ -56,34 +58,68 @@ class _TunerScreenState extends State<TunerScreen>
     if (status.isGranted) {
       setState(() {
         _hasPermission = true;
+        _errorMessage = null;
         _state = TunerState.listening;
       });
       await _startCapture();
+    } else if (status.isPermanentlyDenied) {
+      setState(() {
+        _hasPermission = false;
+        _state = TunerState.idle;
+        _errorMessage =
+            'Microphone permission is blocked. Open Settings to allow access.';
+      });
     } else {
       setState(() {
         _hasPermission = false;
         _state = TunerState.idle;
+        _errorMessage = null;
       });
     }
   }
 
   Future<void> _startCapture() async {
     try {
+      final initialized = await _audioCapture.init();
+      if (initialized != true) {
+        throw Exception('Audio capture failed to initialize');
+      }
+
       await _audioCapture.start(
         _onAudio,
         _onCaptureError,
         sampleRate: _sampleRate,
         bufferSize: _bufferSize,
+        androidAudioSource: ANDROID_AUDIOSRC_MIC,
       );
+
+      final actualRate = _audioCapture.actualSampleRate;
+      if (actualRate != null && actualRate > 0 && actualRate != _sampleRate) {
+        _pitchDetector = PitchDetector(sampleRate: actualRate.round());
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _captureActive = true;
+        _errorMessage = null;
+        _state = TunerState.listening;
+      });
     } catch (e) {
       _onCaptureError(e);
     }
   }
 
   void _onAudio(dynamic obj) {
-    final samples = Float32List.fromList(
-      (obj as List).map((e) => (e as num).toDouble()).toList(),
-    );
+    final Float32List samples;
+    if (obj is Float32List) {
+      samples = obj;
+    } else if (obj is List) {
+      samples = Float32List.fromList(
+        obj.map((e) => (e as num).toDouble()).toList(),
+      );
+    } else {
+      return;
+    }
 
     final pitch = _pitchDetector.getPitch(samples);
     if (!mounted) return;
@@ -115,13 +151,19 @@ class _TunerScreenState extends State<TunerScreen>
 
   void _onCaptureError(Object error) {
     if (!mounted) return;
-    setState(() => _state = TunerState.idle);
+    setState(() {
+      _captureActive = false;
+      _state = TunerState.idle;
+      _errorMessage = 'Could not access the microphone. Tap Enable to try again.';
+    });
   }
 
   @override
   void dispose() {
     _pulseController.dispose();
-    _audioCapture.stop();
+    if (_captureActive) {
+      _audioCapture.stop();
+    }
     super.dispose();
   }
 
@@ -130,13 +172,7 @@ class _TunerScreenState extends State<TunerScreen>
     final inTune = _state == TunerState.inTune;
     final hasSignal = _frequency != null;
 
-    return Scaffold(
-      body: AnimatedBackground(
-        child: SafeArea(
-          child: _hasPermission ? _buildTuner(inTune, hasSignal) : _buildPermissionGate(),
-        ),
-      ),
-    );
+    return _hasPermission ? _buildTuner(inTune, hasSignal) : _buildPermissionGate();
   }
 
   Widget _buildPermissionGate() {
@@ -151,8 +187,7 @@ class _TunerScreenState extends State<TunerScreen>
             decoration: BoxDecoration(
               color: NeonColors.surface,
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: NeonColors.neonCyan.withValues(alpha: 0.5)),
-              boxShadow: NeonGlow.box(NeonColors.neonCyan),
+              border: Border.all(color: NeonColors.neonCyan.withValues(alpha: 0.35)),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -171,6 +206,16 @@ class _TunerScreenState extends State<TunerScreen>
                       ),
                 ),
                 const SizedBox(height: 12),
+                if (_errorMessage != null) ...[
+                  Text(
+                    _errorMessage!,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: NeonColors.neonAmber,
+                        ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 Text(
                   'This app needs the microphone to detect the pitch of your ukulele strings. All processing happens on your device.',
                   textAlign: TextAlign.center,
@@ -180,7 +225,14 @@ class _TunerScreenState extends State<TunerScreen>
                 ),
                 const SizedBox(height: 24),
                 FilledButton(
-                  onPressed: _initMicrophone,
+                  onPressed: () async {
+                    final status = await Permission.microphone.status;
+                    if (status.isPermanentlyDenied) {
+                      await openAppSettings();
+                    } else {
+                      await _initMicrophone();
+                    }
+                  },
                   style: FilledButton.styleFrom(
                     backgroundColor: NeonColors.neonCyan.withValues(alpha: 0.15),
                     foregroundColor: NeonColors.neonCyan,
@@ -190,7 +242,12 @@ class _TunerScreenState extends State<TunerScreen>
                       vertical: 14,
                     ),
                   ),
-                  child: const Text('Enable Microphone'),
+                  child: Text(
+                    _errorMessage != null &&
+                            _errorMessage!.contains('blocked')
+                        ? 'Open Settings'
+                        : 'Enable Microphone',
+                  ),
                 ),
               ],
             ),

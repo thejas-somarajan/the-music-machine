@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 import 'dart:ui' show lerpDouble;
 
@@ -127,7 +128,6 @@ class _CyberpunkBackgroundPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     _paintBaseGradient(canvas, size);
-    _paintHorizonGlow(canvas, size);
     _paintPerspectiveGrid(canvas, size);
     _paintDataStreams(canvas, size);
     _paintParticles(canvas, size);
@@ -152,24 +152,6 @@ class _CyberpunkBackgroundPainter extends CustomPainter {
     );
   }
 
-  void _paintHorizonGlow(Canvas canvas, Size size) {
-    final horizonY = size.height * 0.38;
-    final pulse = 0.5 + sin(ambient * pi * 2) * 0.5;
-
-    canvas.drawRect(
-      Rect.fromLTWH(0, horizonY - 2, size.width, 4),
-      Paint()
-        ..shader = LinearGradient(
-          colors: [
-            Colors.transparent,
-            NeonColors.neonCyan.withValues(alpha: 0.35 + pulse * 0.25),
-            NeonColors.neonMagenta.withValues(alpha: 0.3 + pulse * 0.2),
-            Colors.transparent,
-          ],
-        ).createShader(Rect.fromLTWH(0, horizonY - 2, size.width, 4)),
-    );
-  }
-
   void _paintPerspectiveGrid(Canvas canvas, Size size) {
     final horizonY = size.height * 0.38;
     final centerX = size.width / 2;
@@ -190,7 +172,7 @@ class _CyberpunkBackgroundPainter extends CustomPainter {
           colors: [
             NeonColors.neonCyan.withValues(alpha: 0),
             NeonColors.neonCyan.withValues(alpha: 0.22 * flicker),
-            NeonColors.neonMagenta.withValues(alpha: 0.35 * flicker),
+            NeonColors.neonCyan.withValues(alpha: 0.28 * flicker),
           ],
         ).createShader(Rect.fromLTWH(0, horizonY, size.width, floorHeight));
 
@@ -311,6 +293,7 @@ class _GlitchTextState extends State<GlitchText>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   final _random = Random();
+  Timer? _glitchTimer;
 
   @override
   void initState() {
@@ -323,7 +306,8 @@ class _GlitchTextState extends State<GlitchText>
   }
 
   void _scheduleGlitch() {
-    Future.delayed(Duration(milliseconds: 1800 + _random.nextInt(3200)), () {
+    _glitchTimer?.cancel();
+    _glitchTimer = Timer(Duration(milliseconds: 1800 + _random.nextInt(3200)), () {
       if (!mounted) return;
       _controller.forward(from: 0).then((_) {
         if (mounted) _scheduleGlitch();
@@ -333,6 +317,7 @@ class _GlitchTextState extends State<GlitchText>
 
   @override
   void dispose() {
+    _glitchTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }

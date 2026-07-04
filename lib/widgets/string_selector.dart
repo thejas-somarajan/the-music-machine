@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:ukelele_tuner/core/tuner_notes.dart';
+import 'package:ukelele_tuner/models/tuning_note.dart';
 import 'package:ukelele_tuner/theme/neon_theme.dart';
 
 class StringSelector extends StatelessWidget {
